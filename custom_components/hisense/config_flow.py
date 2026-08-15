@@ -4,6 +4,8 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import config_validation as cv
 from .const import DOMAIN, CONF_USERNAME, CONF_PASSWORD
 from .pyhisenseapi import HiSenseLogin
+from .tv import get_tv_device_info
+
 
 class HisenseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
@@ -69,6 +71,7 @@ class HisenseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             home_id = user_input["home_id"]
+            tv_device_id = (user_input.get("tv_device_id") or "").strip()
             session = async_get_clientsession(self.hass)
             hisense_login = HiSenseLogin(session=session)
             try:
@@ -80,16 +83,51 @@ class HisenseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 if self._device_info is None:
                     errors["base"] = "cannot_connect"
-                elif not self._device_info:
-                    errors["base"] = "no_devices"
                 else:
-                    return await self.async_step_device()
+                    if tv_device_id:
+                        tv_result = await get_tv_device_info(
+                            session, self._access_token, tv_device_id
+                        )
+                        if tv_result is None:
+                            errors["base"] = "cannot_connect"
+                        else:
+                            tv = tv_result["data"][0]
+                            tv_name = (
+                                (tv.get("alias") or "").strip()
+                                or (tv.get("defaultAlias") or "").strip()
+                                or "Hisense TV"
+                            )
+                            self._device_info[tv_device_id] = {
+                                "device_id": tv_device_id,
+                                "wifi_id": "",
+                                "refresh_token": self._refresh_token,
+                                "device_type": "电视",
+                                "device_type_name": "电视",
+                                "device_name": tv_name,
+                                "device_code": tv.get("uuid") or tv_device_id,
+                                "label": tv_name,
+                                "ip": tv.get("ip") or "",
+                                "tv_port": tv.get("tvPort"),
+                                "api_version": tv.get("apiVersion") or "",
+                            }
+
+                    if not errors:
+                        if not self._device_info:
+                            errors["base"] = "no_devices"
+                        else:
+                            return await self.async_step_device()
 
         return self.async_show_form(
             step_id="home",
             data_schema=vol.Schema(
-                {vol.Required("home_id"): vol.In(self._home_options)}
+                {
+                    vol.Required("home_id"): vol.In(self._home_options),
+                    vol.Optional("tv_device_id"): str,
+                }
             ),
+            description_placeholders={
+                "tv_device_id_hint": "Optional Hisense TV deviceId from the mobiletv API"
+            },
             errors=errors,
         )
 
@@ -101,13 +139,10 @@ class HisenseConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not device_ids:
                 errors["base"] = "no_devices"
             else:
-                devices = [
-                    self._device_info[device_id]
-                    for device_id in device_ids
-                ]
+                devices = [self._device_info[device_id] for device_id in device_ids]
                 return self.async_create_entry(
                     title="Hisense Smart Control",
-                    data={"devices": devices}
+                    data={"devices": devices},
                 )
 
         device_id_to_label = {}
