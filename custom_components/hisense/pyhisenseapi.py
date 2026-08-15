@@ -1,8 +1,40 @@
 from collections import Counter
 from copy import deepcopy
+import base64
+import hashlib
+import json
 import time
 import logging
+
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
 _LOGGER = logging.getLogger(__name__)
+
+_PORTAL_APP_KEY = "commonweb"
+_PORTAL_APP_SECRET = "MORZRbkuiWxjp+SM4vR_GxY4pZxLZ6rn"
+_PORTAL_AES_IV = _PORTAL_APP_SECRET[:16].encode("ascii")
+
+
+def _portal_encrypt(value: str) -> str:
+    """Encrypt a portal login field as the current account web client does."""
+    raw = value.encode("utf-8")
+    padding = 16 - (len(raw) % 16)
+    padded = raw + bytes([padding]) * padding
+    cipher = Cipher(
+        algorithms.AES(_PORTAL_APP_SECRET.encode("ascii")),
+        modes.CBC(_PORTAL_AES_IV),
+    )
+    encryptor = cipher.encryptor()
+    encrypted = encryptor.update(padded) + encryptor.finalize()
+    return base64.b64encode(encrypted).decode("ascii")
+
+
+def _portal_sign(body: str) -> str:
+    """Create X-Sign-For as Base64(MD5(body + portal app secret))."""
+    digest = hashlib.md5(
+        (body + _PORTAL_APP_SECRET).encode("utf-8"), usedforsecurity=False
+    ).digest()
+    return base64.b64encode(digest).decode("ascii")
 
 _STATUS_SWING_MODES = {0, 1, 2, 3}
 _MIN_STATUS_VALUES = 210
@@ -47,22 +79,19 @@ class HiSenseLogin:
 
     async def login(self, username, password):
         timestamp = self.get_timestamp()
-        url='https://portal-account.hismarttv.com/mobile/signon'
-        headers = {
-            'Content-Type': 'application/json;charset=utf-8',
-        }
+        url = 'https://portal-account.hismarttv.com/mobile/se/signon'
         data = {
-            'pdateTime': '0',
-            'version': '1.0',
-            'deviceType': '2',
-            'appType': '100',
-            'versionCode': '101',
-            'adaptertRank': '3098',
-            'deviceType':'1',
-            'distributeId':'2001',
-            'loginName': username,
-            'serverCode':'9501',
-            'signature': password,
+            'loginName': _portal_encrypt(username),
+            'signature': _portal_encrypt(password),
+            'serverCode': '9501',
+            'distributeId': '2001',
+            'termType': 2,
+        }
+        body = json.dumps(data, separators=(',', ':'), ensure_ascii=False)
+        headers = {
+            'Content-Type': 'application/json; charset=UTF-8',
+            'appKey': _PORTAL_APP_KEY,
+            'X-Sign-For': _portal_sign(body),
         }
         params = {
             'lastUpdateTime': '0',
@@ -70,18 +99,21 @@ class HiSenseLogin:
             'deviceType': '2',
             'appType': '100',
             'versionCode': '101',
-            'adaptertRank': '4130',
+            'adaptertRank': '720',
             '_': str(timestamp),
         }
-        async with self.session.post(url, headers=headers, json=data, params=params) as response:
+        async with self.session.post(
+            url, headers=headers, data=body, params=params
+        ) as response:
             result = await response.json()
-            result_code = result["data"]["resultCode"]
+            result_code = (result.get("data") or {}).get("resultCode")
             if result_code == 0:
-                access_token = result["data"]["tokenInfo"]["token"]
-                refresh_token = result["data"]["tokenInfo"]["refreshToken"]
-                return access_token, refresh_token
-            else:
-                return None
+                token_info = (result.get("data") or {}).get("tokenInfo") or {}
+                access_token = token_info.get("token")
+                refresh_token = token_info.get("refreshToken")
+                if access_token and refresh_token:
+                    return access_token, refresh_token
+            return None
 
     async def get_home_select_options(self, access_token):
         """Return mapping home_id -> display name for config flow UI."""
