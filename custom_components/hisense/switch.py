@@ -11,12 +11,12 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     coordinators = hass.data[DOMAIN][config_entry.entry_id]
-    ac_coordinators = [
-        c for c in coordinators.values() if c.device_type == "空调"
-    ]
+    ac_coordinators = [c for c in coordinators.values() if c.device_type == "空调"]
+    tv_coordinators = [c for c in coordinators.values() if c.device_type == "电视"]
+
     entities = [AcScreenSwitch(coordinator) for coordinator in ac_coordinators]
-    async_add_entities(entities)
-    entities = [AuxHeatSwitch(coordinator) for coordinator in ac_coordinators]
+    entities.extend(AuxHeatSwitch(coordinator) for coordinator in ac_coordinators)
+    entities.extend(HisenseTVPowerSwitch(coordinator) for coordinator in tv_coordinators)
     async_add_entities(entities)
 
 
@@ -68,3 +68,33 @@ class AuxHeatSwitch(HisenseEntity, SwitchEntity):
             self.coordinator.async_update_from_client()
             return
         raise HomeAssistantError("Failed to turn off Hisense AC auxiliary heat")
+
+
+class HisenseTVPowerSwitch(HisenseEntity, SwitchEntity):
+    """Expose the TV's real cloud power state."""
+
+    _attr_name = "电源"
+    _attr_icon = "mdi:television"
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "tv_power", "tv_power")
+
+    @property
+    def is_on(self):
+        return self.status.get("power_on", False)
+
+    async def async_turn_on(self):
+        if await self.client.turn_on():
+            await self.coordinator.async_request_refresh()
+            return
+        raise HomeAssistantError(
+            "Hisense TV power-on API is not configured yet; state refresh is supported"
+        )
+
+    async def async_turn_off(self):
+        if await self.client.turn_off():
+            await self.coordinator.async_request_refresh()
+            return
+        raise HomeAssistantError(
+            "Hisense TV power-off API is not configured yet; state refresh is supported"
+        )
