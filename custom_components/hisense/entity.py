@@ -10,6 +10,7 @@ from homeassistant.util import slugify
 from .const import DOMAIN
 from .coordinator import HisenseDataUpdateCoordinator
 from .pyhisenseapi import HiSenseAC, HiSenseFridge
+from .tv import HiSenseTV
 
 
 class HisenseEntity(CoordinatorEntity[HisenseDataUpdateCoordinator]):
@@ -26,18 +27,18 @@ class HisenseEntity(CoordinatorEntity[HisenseDataUpdateCoordinator]):
     ) -> None:
         """Initialize the entity."""
         super().__init__(coordinator)
-        
+
         device_id = coordinator.client.device_id
         slugified_device_id = slugify(device_id)
-        
+
         self._attr_unique_id = f"{unique_suffix}_{slugified_device_id}"
         self._attr_suggested_object_id = f"{object_suffix}_{slugified_device_id}"
-        
+
         if icon:
             self._attr_icon = icon
 
     @property
-    def client(self) -> HiSenseAC | HiSenseFridge:
+    def client(self) -> HiSenseAC | HiSenseFridge | HiSenseTV:
         """Return the device API client."""
         return self.coordinator.client
 
@@ -51,19 +52,24 @@ class HisenseEntity(CoordinatorEntity[HisenseDataUpdateCoordinator]):
         """Return Home Assistant device registry info."""
         device_type = self.coordinator.device_type
         device_name = getattr(self.client, "device_name", "")
-        
+
         if device_type == "冰箱":
             translation_key = "hisense_fridge"
             name = device_name if device_name else "Hisense Fridge"
+        elif device_type == "电视":
+            translation_key = None
+            name = device_name if device_name else "Hisense TV"
         else:
             translation_key = "hisense_ac"
             name = device_name if device_name else "Hisense AC"
 
-        return {
+        info = {
             "identifiers": {(DOMAIN, self.client.device_id)},
             "name": name,
-            "translation_key": translation_key,
             "manufacturer": "Hisense",
             "model": device_name,
             "serial_number": self.client.device_id,
         }
+        if translation_key:
+            info["translation_key"] = translation_key
+        return info
