@@ -59,12 +59,16 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     fridge_coordinators = [
         c for c in coordinators.values() if c.device_type == "冰箱"
     ]
+    tv_coordinators = [
+        c for c in coordinators.values() if c.device_type == "电视"
+    ]
 
     sensors = [
         HisenseFridgeSensor(coordinator, desc)
         for coordinator in fridge_coordinators
         for desc in FRIDGE_SENSOR_DESCRIPTIONS
     ]
+    sensors.extend(HisenseTVPowerStateSensor(coordinator) for coordinator in tv_coordinators)
     async_add_entities(sensors)
 
 
@@ -87,3 +91,21 @@ class HisenseFridgeSensor(HisenseEntity, SensorEntity):
     @property
     def native_value(self):
         return self.status.get(self.entity_description.key)
+
+
+class HisenseTVPowerStateSensor(HisenseEntity, SensorEntity):
+    """Read-only real power state for a Hisense TV."""
+
+    _attr_name = "电源状态"
+
+    def __init__(self, coordinator):
+        super().__init__(
+            coordinator,
+            "tv_power_state",
+            "tv_power_state",
+            "mdi:television",
+        )
+
+    @property
+    def native_value(self):
+        return "开机" if self.status.get("power_on", False) else "关机"
