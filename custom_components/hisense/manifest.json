@@ -2,9 +2,9 @@
   "domain": "hisense",
   "name": "Hisense Smart Devices",
   "config_flow": true,
-  "version": "1.6.2",
+  "version": "1.6.3",
   "integration_type": "device",
-  "documentation": "https://github.com/manymuch/HisenseHA",
+  "documentation": "https://github.com/bianxbx/HisenseHA",
   "requirements": [],
   "iot_class": "cloud_polling",
   "codeowners": [
