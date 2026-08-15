@@ -9,6 +9,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import DOMAIN
 from .pyhisenseapi import HiSenseAC, HiSenseFridge
+from .tv import HiSenseTV
 
 import logging
 
@@ -16,13 +17,13 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class HisenseDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Coordinator for a single Hisense device (AC or Fridge)."""
+    """Coordinator for a single Hisense device."""
 
     def __init__(
         self,
         hass: HomeAssistant,
-        client: HiSenseAC | HiSenseFridge,
-        device_type: str = "空调"
+        client: HiSenseAC | HiSenseFridge | HiSenseTV,
+        device_type: str = "空调",
     ) -> None:
         """Initialize the coordinator."""
         self.client = client
