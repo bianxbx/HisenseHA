@@ -4,22 +4,27 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import DOMAIN
 from .coordinator import HisenseDataUpdateCoordinator
 from .pyhisenseapi import HiSenseAC, HiSenseFridge
+from .tv import HiSenseTV
 
 
 async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.ConfigEntry):
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {}
     session = async_get_clientsession(hass)
+
     for device_info in entry.data["devices"]:
         device_id = device_info["device_id"]
-        wifi_id = device_info["wifi_id"]
+        wifi_id = device_info.get("wifi_id", "")
         refresh_token = device_info["refresh_token"]
         device_type = device_info.get("device_type", "空调")
         device_type_name = device_info.get("device_type_name", "")
         device_name = device_info.get("device_name", "")
         device_code = device_info.get("device_code", "")
-        
-        friendly_name = f"{device_type_name}_{device_name}" if device_type_name and device_name else device_id
+
+        friendly_name = (
+            device_info.get("label")
+            or (f"{device_type_name}_{device_name}" if device_type_name and device_name else device_id)
+        )
         entity_name = device_code if device_code else device_id
 
         if device_type == "冰箱":
@@ -29,7 +34,17 @@ async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.Conf
                 refresh_token=refresh_token,
                 session=session,
                 device_name=friendly_name,
-                entity_name=entity_name
+                entity_name=entity_name,
+            )
+        elif device_type == "电视":
+            client = HiSenseTV(
+                device_id=device_id,
+                refresh_token=refresh_token,
+                session=session,
+                device_name=friendly_name,
+                entity_name=entity_name,
+                ip=device_info.get("ip", ""),
+                tv_port=device_info.get("tv_port"),
             )
         else:
             client = HiSenseAC(
@@ -38,7 +53,7 @@ async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.Conf
                 refresh_token=refresh_token,
                 session=session,
                 device_name=friendly_name,
-                entity_name=entity_name
+                entity_name=entity_name,
             )
 
         coordinator = HisenseDataUpdateCoordinator(hass, client, device_type)
